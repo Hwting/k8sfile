@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: activemq-svc
+  labels:
+    app: activemq
+spec:
+  ports:
+  - port: 61616
+    name: activemq
+  clusterIP: None
+  selector:
+    app: activemq
+---
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: activemq
+spec:
+  serviceName: "activemq-svc"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: activemq
+        svc: activemq-outside
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: activemq
+        image: 192.168.19.111/zhph/activemq:c5.15
+        ports:
+        - containerPort: 8161
+          name: web
+        - containerPort: 61619 
+          name: activemq
+        - containerPort: 61616
+          name: jms
+        volumeMounts:
+        - name: datadir
+          mountPath: /opt/activemq/data 
+  volumeClaimTemplates:
+  - metadata:
+      name: datadir
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi

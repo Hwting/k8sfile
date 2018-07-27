@@ -1,0 +1,35 @@
+
+	
+创建pv
+---	
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv 
+spec:
+  capacity:
+    storage: 60Gi 
+  accessModes:
+    - ReadWriteMany 
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: slow  
+  nfs: 
+    path: /opt/pvstorage 
+    server: 192.168.7.206 
+    readOnly: false
+
+创建pvc	
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: datadir  
+spec:
+  accessModes:
+  - ReadWriteMany
+  storageClassName: slow  
+  resources:
+     requests:
+       storage: 30Gi  
+
+ 
