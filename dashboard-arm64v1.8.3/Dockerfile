@@ -1,0 +1,1 @@
+FROM gcr.iogoogle_containerskubernetes-dashboard-arm64v1.8.3
