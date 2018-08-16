@@ -1,0 +1,32 @@
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: nfs-client-provisioner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: nfs-client-provisioner
+    spec:
+      serviceAccountName: nfs-client-provisioner
+      containers:
+        - name: nfs-client-provisioner
+          image: 192.168.19.111/gc/nfs-client-provisioner:latest
+          volumeMounts:
+            - name: nfs-client-root
+              mountPath: /persistentvolumes
+          env:
+            - name: PROVISIONER_NAME
+              value: zhph.lan/nfs
+            - name: NFS_SERVER
+              value: 192.168.7.206
+            - name: NFS_PATH
+              value: /opt/k8s-nfs-storage
+      volumes:
+        - name: nfs-client-root
+          nfs:
+            server: 192.168.7.206
+            path: /opt/k8s-nfs-storage
