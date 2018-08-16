@@ -1,0 +1,158 @@
+#!/bin/bash
+set -e
+# 定义项目名
+projectName=dev-grfana
+# 定义URL
+projectUrl="dev-grafana.zhph.lan"
+#定义svc
+projectSvc=grfana-svc
+# 定义NFS IP地址
+nfsIp="192.168.7.206"
+#定义k8s集群pod的副本数量
+replicas=1
+
+# 定义NFS
+nfsPath="/opt/${projectName}-data"
+#定义k8s集群deployment名称
+projectDm=${projectName}-dm
+image="192.168.19.111/monitor/grafana:5.1.0"
+
+# 检查NFS目录
+if [ ! -d "${nfsPath}" ]; then
+  echo ">>> 目录${nfsPath}不存在，正在创建!"
+  if mkdir ${nfsPath}; then
+    if touch ${nfsPath}/aa; then
+       echo ">>> 目录已经创建."
+       rm  "${nfsPath}/aa" -f
+    else 
+       echo ">>> 创建目录${nfsPath}失败,或目录不可写。"
+       exit 1
+    fi
+    else 
+    echo ">>> 创建目录${nfsPath}成功"
+  fi
+fi
+
+if grep -q "${projectName}" /etc/exports; then
+    echo ">>> 存在相应记录."
+  else
+    echo ">>> 增加NFS记录."
+    echo "${nfsPath} *(rw,no_root_squash,no_all_squash,sync)" >> /etc/exports
+    exportfs -rv  
+
+fi
+#-------------------------------------------------
+
+
+echo ">> 部署节点镜像为${image}"
+
+
+# 检查deployment是否存在部署
+projectFlag=`kubectl get deployment | grep $projectDm | wc -l`
+
+# 如果存在deployment
+if [ $projectFlag -eq 1 ]; then
+  # 如果镜像相同
+  # 检查部署的镜像内容
+  projectCI=`kubectl get deployment $projectDm -o jsonpath="{..image}"`
+  if [ "$projectCI" = "$image" ]; then
+    # 删除以前的部署
+    kubectl delete deploy $projectDm
+    redeployFlag=1
+  else
+    # 重置镜像地址
+    kubectl set image deployment/$projectDm $projectSvc=${image}
+  fi
+else
+  redeployFlag=2
+fi
+ 
+if [ $redeployFlag -gt 0 ] ; then
+ 
+echo ">> 正在创建Deployment ${projectDm}"
+
+cat <<EOF | kubectl create -f -
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: ${projectDm}
+spec:
+  replicas: ${replicas}
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate  
+  selector:
+    matchLabels:
+      name: ${projectDm}
+  template:
+    metadata:
+      labels:
+        name: ${projectDm}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: ${projectSvc}
+        image: ${image}
+        imagePullPolicy: Always
+        resources:
+          limits:
+            memory: 4096Mi
+          requests:
+            memory: 4096Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: plugins
+          mountPath:  /var/lib/grafana/plugins
+          readOnly: false
+        - name: tz-config
+          mountPath: /etc/localtime
+        ports:
+        - containerPort: 3000
+      volumes:
+      - name: plugins
+        nfs:
+          server: 192.168.7.206
+          path: ${nfsPath}
+      - name: tz-config
+        hostPath:
+          path: /usr/share/zoneinfo/Asia/Shanghai
+EOF
+fi
+
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${projectSvc}
+spec:
+  type: NodePort
+  ports: 
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    name: ${projectDm}
+    
+---
+kind: Ingress
+apiVersion: extensions/v1beta1
+metadata:
+  name: ${projectSvc}
+spec:
+  rules:
+  - host:  ${projectUrl}
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: ${projectSvc}
+          servicePort: 80
+EOF
