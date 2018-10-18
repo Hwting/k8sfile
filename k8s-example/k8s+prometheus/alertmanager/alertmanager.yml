@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: alertmanager
+    namespace: monitoring
+data:
+  config.yml: |-
+    global:
+      smtp_smarthost:  'smtp.idcesc.com:25'
+      smtp_from:  'zabbix@idcesc.com'
+      smtp_auth_username:   'aler@idcesc.com'
+      smtp_auth_password:  '1111111'
+      resolve_timeout: 10m
+      smtp_require_tls: false
+    route:
+      group_by: ['alertname']
+      repeat_interval: 1h
+      receiver: live-monitoring
+    receivers:
+    - name: 'live-monitoring'
+      email_configs:
+      - to: 'xxxx@idcesc.com'

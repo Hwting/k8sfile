@@ -17,168 +17,203 @@ data:
     rule_files:
      - "rules.yml"
     scrape_configs:
+      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L37
+      - job_name: 'prometheus'
+        static_configs:
+        - targets: ['localhost:9090']
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+        - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: default;kubernetes;https
 
-    - job_name: 'kubernetes-apiservers'
-      kubernetes_sd_configs:
-      - role: endpoints
-      scheme: https
-      tls_config:
-        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
-        action: keep
-        regex: default;kubernetes;https
-
-    - job_name: 'kubernetes-nodes'
-      kubernetes_sd_configs:
-      - role: node
-      scheme: http
-      tls_config:
-        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-      relabel_configs:
-      - action: labelmap
-        regex: __meta_kubernetes_node_label_(.+)
-      - target_label: __address__
-        replacement: 192.168.7.203:8080
-      - source_labels: [__meta_kubernetes_node_name]
-        regex: (.+)
-        target_label: __metrics_path__
-        replacement: /api/v1/nodes/${1}/proxy/metrics
-
-    - job_name: 'kubernetes-service-endpoints'
-      kubernetes_sd_configs:
-      - role: endpoints
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
-        action: keep
-        regex: true
-      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
-        action: replace
-        target_label: __scheme__
-        regex: (http?)
-      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
-        action: replace
-        target_label: __metrics_path__
-        regex: (.+)
-      - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
-        action: replace
-        target_label: __address__
-        regex: ([^:]+)(?::\d+)?;(\d+)
-        replacement: $1:$2
-      - action: labelmap
-        regex: __meta_kubernetes_service_label_(.+)
-      - source_labels: [__meta_kubernetes_namespace]
-        action: replace
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_service_name]
-        action: replace
-        target_label: kubernetes_name
-
-    - job_name: 'kubernetes-services'
-      kubernetes_sd_configs:
-      - role: service
-      metrics_path: /probe
-      params:
-        module: [http_2xx]
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
-        action: keep
-        regex: true
-      - source_labels: [__address__]
-        target_label: __param_target
-      - target_label: __address__
-        replacement: blackbox-exporter.example.com:9115
-      - source_labels: [__param_target]
-        target_label: instance
-      - action: labelmap
-        regex: __meta_kubernetes_service_label_(.+)
-      - source_labels: [__meta_kubernetes_namespace]
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_service_name]
-        target_label: kubernetes_name
-
-    - job_name: 'kubernetes-pods'
-      kubernetes_sd_configs:
-      - role: pod
-      relabel_configs:
-      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
-        action: keep
-        regex: true
-      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
-        action: replace
-        target_label: __metrics_path__
-        regex: (.+)
-      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
-        action: replace
-        regex: ([^:]+)(?::\d+)?;(\d+)
-        replacement: $1:$2
-        target_label: __address__
-      - action: labelmap
-        regex: __meta_kubernetes_pod_label_(.+)
-      - source_labels: [__meta_kubernetes_namespace]
-        action: replace
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: kubernetes_pod_name
-    
-    - job_name: 'kubernetes-kubelet'
-      scheme: http
-      tls_config:
-        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-        insecure_skip_verify: true
-      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-  
-      kubernetes_sd_configs:
-      - role: node
-      relabel_configs:
-      - action: labelmap
-        regex: __meta_kubernetes_node_label_(.+)
-      - target_label: __address__
-        replacement: 192.168.7.203:8080
-      - source_labels: [__meta_kubernetes_node_name]
-        regex: (.+)
-        target_label: __metrics_path__
-        replacement: /api/v1/nodes/${1}/proxy/metrics
-    - job_name: 'kubernetes-kube-state'
-      kubernetes_sd_configs:
-      - role: pod
-      relabel_configs:
-      - action: labelmap
-        regex: __meta_kubernetes_pod_label_(.+)
-      - source_labels: [__meta_kubernetes_namespace]
-        action: replace
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: kubernetes_pod_name
-      - source_labels: [__meta_kubernetes_pod_label_grafanak8sapp]
-        regex: .*true.*
-        action: keep
-      - source_labels: ['__meta_kubernetes_pod_label_daemon', '__meta_kubernetes_pod_node_name']
-        regex: 'node-exporter;(.*)'
-        action: replace
-        target_label: nodename
-      
-    - job_name: 'kubernetes-cadvisor'
-      scheme: http
-      tls_config:
-        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-        insecure_skip_verify: true
-      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
-      kubernetes_sd_configs:
-      - role: node
-      relabel_configs:
-      - action: labelmap
-        regex: __meta_kubernetes_node_label_(.+)
-      - target_label: __address__
-        replacement: 192.168.7.203:8080
-      - source_labels: [__meta_kubernetes_node_name]
-        regex: (.+)
-        target_label: __metrics_path__
-        replacement: /api/v1/nodes/${1}/proxy/metrics
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+        - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - target_label: __address__
+          replacement: kubernetes.default.svc.cluster.local:443
+        - source_labels: [__meta_kubernetes_node_name]
+          regex: (.+)
+          target_label: __metrics_path__
+          replacement: /api/v1/nodes/${1}/proxy/metrics
+      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L79
+      - job_name: 'kubernetes-service-endpoints'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+            action: replace
+            target_label: __scheme__
+            regex: (http?)
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            action: replace
+            target_label: kubernetes_name
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: nodename
+      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L119
+      - job_name: 'kubernetes-services'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        kubernetes_sd_configs:
+          - role: service
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
+            action: keep
+        params:
+          module: [http_2xx]
+        kubernetes_sd_configs:
+          - role: service
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
+            action: keep
+            regex: true
+          - source_labels: [__address__]
+            target_label: __param_target
+          - target_label: __address__
+            replacement: blackbox-exporter:9115
+          - source_labels: [__param_target]
+            target_label: instance
+          - action: labelmap
+            regex: __meta_kubernetes_service_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_service_name]
+            target_label: kubernetes_name
+      - job_name: 'blackbox'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        static_configs:
+          - targets:
+            - http://auditing.zhphfinance.com
+            - http://creditapr.zhphfinance.com
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: target
+          - target_label: __address__
+            replacement: blackbox-exporter:9115
+      # https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml#L156
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+      - job_name: 'kubernetes-kubelet'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: (.+):(?:\d+);(\d+)
+            replacement: ${1}:${2}
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: 9\d{3}
+      - job_name: 'kubernetes-cadvisor'
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        kubernetes_sd_configs:
+        - role: node
+        relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - target_label: __address__
+          replacement: kubernetes.default.svc.cluster.local:443
+        - source_labels: [__meta_kubernetes_node_name]
+          regex: (.+)
+          target_label: __metrics_path__
+          replacement: /api/v1/nodes/${1}:4194/proxy/metrics
+      - job_name: 'kubernetes-kube-state'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+          - source_labels: [__meta_kubernetes_pod_label_grafanak8sapp]
+            regex: .*true.*
+            action: keep
+          - source_labels: ['__meta_kubernetes_pod_label_daemon', '__meta_kubernetes_pod_node_name']
+            regex: 'node-exporter;(.*)'
+            action: replace
+            target_label: nodename
   rules.yml: |
     groups:
     - name: rule
@@ -746,7 +781,7 @@ data:
           message: Prometheus has disappeared from Prometheus target discovery.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-prometheusdown
         expr: |
-          absent(up{job="prometheus-k8s"} == 1)
+          absent(up{job="prometheus"} == 1)
         for: 15m
         labels:
           severity: critical
@@ -755,7 +790,7 @@ data:
           message: PrometheusOperator has disappeared from Prometheus target discovery.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-prometheusoperatordown
         expr: |
-          absent(up{job="prometheus-operator"} == 1)
+          absent(up{job="prometheus"} == 1)
         for: 15m
         labels:
           severity: critical
@@ -1107,7 +1142,7 @@ data:
             `{{$labels.service}}` are out of sync.
           summary: Configuration out of sync
         expr: |
-          count_values("config_hash", alertmanager_config_hash{job="alertmanager-main"}) BY (service) / ON(service) GROUP_LEFT() label_replace(prometheus_operator_alertmanager_spec_replicas{job="prometheus-operator"}, "service", "alertmanager-$1", "alertmanager", "(.*)") != 1
+          count_values("config_hash", alertmanager_config_hash{job="alertmanager-main"}) BY (service) / ON(service) GROUP_LEFT() label_replace(prometheus_operator_alertmanager_spec_replicas{job="prometheus"}, "service", "alertmanager-$1", "alertmanager", "(.*)") != 1
         for: 5m
         labels:
           severity: critical
@@ -1117,7 +1152,7 @@ data:
             from discovery.
           summary: Alertmanager down or missing
         expr: |
-          label_replace(prometheus_operator_alertmanager_spec_replicas{job="prometheus-operator"}, "job", "alertmanager-$1", "alertmanager", "(.*)") / ON(job) GROUP_RIGHT() sum(up{job="alertmanager-main"}) BY (job) != 1
+          label_replace(prometheus_operator_alertmanager_spec_replicas{job="prometheus"}, "job", "alertmanager-$1", "alertmanager", "(.*)") / ON(job) GROUP_RIGHT() sum(up{job="alertmanager-main"}) BY (job) != 1
         for: 5m
         labels:
           severity: warning
@@ -1176,7 +1211,7 @@ data:
           description: Reloading Prometheus' configuration has failed for {{$labels.namespace}}/{{$labels.pod}}
           summary: Reloading Promehteus' configuration failed
         expr: |
-          prometheus_config_last_reload_successful{job="prometheus-k8s"} == 0
+          prometheus_config_last_reload_successful{job="prometheus"} == 0
         for: 10m
         labels:
           severity: warning
@@ -1186,7 +1221,7 @@ data:
             $labels.pod}}
           summary: Prometheus' alert notification queue is running full
         expr: |
-          predict_linear(prometheus_notifications_queue_length{job="prometheus-k8s"}[5m], 60 * 30) > prometheus_notifications_queue_capacity{job="prometheus-k8s"}
+          predict_linear(prometheus_notifications_queue_length{job="prometheus"}[5m], 60 * 30) > prometheus_notifications_queue_capacity{job="prometheus"}
         for: 10m
         labels:
           severity: warning
@@ -1196,7 +1231,7 @@ data:
             $labels.pod}} to Alertmanager {{$labels.Alertmanager}}
           summary: Errors while sending alert from Prometheus
         expr: |
-          rate(prometheus_notifications_errors_total{job="prometheus-k8s"}[5m]) / rate(prometheus_notifications_sent_total{job="prometheus-k8s"}[5m]) > 0.01
+          rate(prometheus_notifications_errors_total{job="prometheus"}[5m]) / rate(prometheus_notifications_sent_total{job="prometheus"}[5m]) > 0.01
         for: 10m
         labels:
           severity: warning
@@ -1206,7 +1241,7 @@ data:
             $labels.pod}} to Alertmanager {{$labels.Alertmanager}}
           summary: Errors while sending alerts from Prometheus
         expr: |
-          rate(prometheus_notifications_errors_total{job="prometheus-k8s"}[5m]) / rate(prometheus_notifications_sent_total{job="prometheus-k8s"}[5m]) > 0.03
+          rate(prometheus_notifications_errors_total{job="prometheus"}[5m]) / rate(prometheus_notifications_sent_total{job="prometheus"}[5m]) > 0.03
         for: 10m
         labels:
           severity: critical
@@ -1216,7 +1251,7 @@ data:
             to any Alertmanagers
           summary: Prometheus is not connected to any Alertmanagers
         expr: |
-          prometheus_notifications_alertmanagers_discovered{job="prometheus-k8s"} < 1
+          prometheus_notifications_alertmanagers_discovered{job="prometheus"} < 1
         for: 10m
         labels:
           severity: warning
@@ -1226,7 +1261,7 @@ data:
             reload failures over the last four hours.'
           summary: Prometheus has issues reloading data blocks from disk
         expr: |
-          increase(prometheus_tsdb_reloads_failures_total{job="prometheus-k8s"}[2h]) > 0
+          increase(prometheus_tsdb_reloads_failures_total{job="prometheus"}[2h]) > 0
         for: 12h
         labels:
           severity: warning
@@ -1236,7 +1271,7 @@ data:
             compaction failures over the last four hours.'
           summary: Prometheus has issues compacting sample blocks
         expr: |
-          increase(prometheus_tsdb_compactions_failed_total{job="prometheus-k8s"}[2h]) > 0
+          increase(prometheus_tsdb_compactions_failed_total{job="prometheus"}[2h]) > 0
         for: 12h
         labels:
           severity: warning
@@ -1246,7 +1281,7 @@ data:
             log (WAL).'
           summary: Prometheus write-ahead log is corrupted
         expr: |
-          tsdb_wal_corruptions_total{job="prometheus-k8s"} > 0
+          tsdb_wal_corruptions_total{job="prometheus"} > 0
         for: 4h
         labels:
           severity: warning
@@ -1256,7 +1291,7 @@ data:
             samples.
           summary: Prometheus isn't ingesting samples
         expr: |
-          rate(prometheus_tsdb_head_samples_appended_total{job="prometheus-k8s"}[5m]) <= 0
+          rate(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[5m]) <= 0
         for: 10m
         labels:
           severity: warning
@@ -1266,18 +1301,18 @@ data:
             due to duplicate timestamps but different values'
           summary: Prometheus has many samples rejected
         expr: |
-          increase(prometheus_target_scrapes_sample_duplicate_timestamp_total{job="prometheus-k8s"}[5m]) > 0
+          increase(prometheus_target_scrapes_sample_duplicate_timestamp_total{job="prometheus"}[5m]) > 0
         for: 10m
         labels:
           severity: warning
-    - name: prometheus-operator
+    - name: prometheus
       rules:
       - alert: PrometheusOperatorAlertmanagerReconcileErrors
         annotations:
           message: Errors while reconciling Alertmanager in {{ $labels.namespace }}
             Namespace.
         expr: |
-          rate(prometheus_operator_alertmanager_reconcile_errors_total{job="prometheus-operator"}[5m]) > 0.1
+          rate(prometheus_operator_alertmanager_reconcile_errors_total{job="prometheus"}[5m]) > 0.1
         for: 10m
         labels:
           severity: warning
@@ -1285,7 +1320,7 @@ data:
         annotations:
           message: Errors while reconciling Prometheus in {{ $labels.namespace }} Namespace.
         expr: |
-          rate(prometheus_operator_prometheus_reconcile_errors_total{job="prometheus-operator"}[5m]) > 0.1
+          rate(prometheus_operator_prometheus_reconcile_errors_total{job="prometheus"}[5m]) > 0.1
         for: 10m
         labels:
           severity: warning
@@ -1293,7 +1328,7 @@ data:
         annotations:
           message: Errors while reconciling Prometheus in {{ $labels.namespace }} Namespace.
         expr: |
-          rate(prometheus_operator_node_address_lookup_errors_total{job="prometheus-operator"}[5m]) > 0.1
+          rate(prometheus_operator_node_address_lookup_errors_total{job="prometheus"}[5m]) > 0.1
         for: 10m
         labels:
           severity: warning
