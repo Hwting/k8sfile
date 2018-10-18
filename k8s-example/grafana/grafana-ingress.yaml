@@ -1,0 +1,19 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    ingress.kubernetes.io/proxy-body-size: 500m
+    nginx.ingress.kubernetes.io/large_client_header_buffers: 4 8k
+    nginx.ingress.kubernetes.io/proxy-body-size: 600m
+  generation: 1
+  name: grafana-svc
+  namespace: monitoring
+spec:
+  rules:
+  - host: dev-grafana.zhph.lan
+    http:
+      paths:
+      - backend:
+          serviceName: grafana-svc
+          servicePort: 80
+        path: /

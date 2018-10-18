@@ -110,7 +110,7 @@ spec:
           timeoutSeconds: 5
         volumeMounts:
         - name: plugins
-          mountPath:  /var/lib/grafana/plugins
+          mountPath:  /var/lib/grafana
           readOnly: false
         - name: tz-config
           mountPath: /etc/localtime
