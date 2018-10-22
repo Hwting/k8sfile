@@ -21,7 +21,10 @@ data:
       - job_name: 'prometheus'
         static_configs:
         - targets: ['localhost:9090']
-      - job_name: 'kubernetes-apiservers'
+      - job_name: 'alertmanager-main'
+        static_configs:
+        - targets: ['alertmanager:9093']
+      - job_name: 'apiserver'
         kubernetes_sd_configs:
         - role: endpoints
         scheme: https
@@ -32,7 +35,6 @@ data:
         - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
           action: keep
           regex: default;kubernetes;https
-
       - job_name: 'kubernetes-nodes'
         kubernetes_sd_configs:
         - role: node
@@ -119,6 +121,9 @@ data:
           - targets:
             - http://auditing.zhphfinance.com
             - http://creditapr.zhphfinance.com
+            - http://credit.zhphfinance.com
+            - http://pay.zhphfinance.com
+            - http://reports.zhphfinance.com
         relabel_configs:
           - source_labels: [__address__]
             target_label: __param_target
@@ -242,45 +247,54 @@ data:
         annotations:
           summary: "{{$labels.instance}}: High CPU usage detected"
           description: "{{$labels.instance}}: CPU usage is above 80% (current value is: {{ $value }}"
+    - name: site
+      rules: 
+      - alert: 网站异常
+        expr: probe_success{job="blackbox"} == 0
+        for: 5s
+        labels:
+          severity: critica
+        annotations:
+          summary: "网站 {{ $labels.target }} 访问异常"
     - name: k8s.rules
       rules:
       - expr: |
-          sum(rate(container_cpu_usage_seconds_total{job="kubelet", image!="", container_name!=""}[5m])) by (namespace)
+          sum(rate(container_cpu_usage_seconds_total{job="kubernetes-kubelet", image!="", container_name!=""}[5m])) by (namespace)
         record: namespace:container_cpu_usage_seconds_total:sum_rate
       - expr: |
           sum by (namespace, pod_name, container_name) (
-            rate(container_cpu_usage_seconds_total{job="kubelet", image!="", container_name!=""}[5m])
+            rate(container_cpu_usage_seconds_total{job="kubernetes-kubelet", image!="", container_name!=""}[5m])
           )
         record: namespace_pod_name_container_name:container_cpu_usage_seconds_total:sum_rate
       - expr: |
-          sum(container_memory_usage_bytes{job="kubelet", image!="", container_name!=""}) by (namespace)
+          sum(container_memory_usage_bytes{job="kubernetes-kubelet", image!="", container_name!=""}) by (namespace)
         record: namespace:container_memory_usage_bytes:sum
       - expr: |
           sum by (namespace, label_name) (
-             sum(rate(container_cpu_usage_seconds_total{job="kubelet", image!="", container_name!=""}[5m])) by (namespace, pod_name)
+             sum(rate(container_cpu_usage_seconds_total{job="kubernetes-kubelet", image!="", container_name!=""}[5m])) by (namespace, pod_name)
            * on (namespace, pod_name) group_left(label_name)
-             label_replace(kube_pod_labels{job="kube-state-metrics"}, "pod_name", "$1", "pod", "(.*)")
+             label_replace(kube_pod_labels{job="kubernetes-kube-state"}, "pod_name", "$1", "pod", "(.*)")
           )
         record: namespace_name:container_cpu_usage_seconds_total:sum_rate
       - expr: |
           sum by (namespace, label_name) (
-            sum(container_memory_usage_bytes{job="kubelet",image!="", container_name!=""}) by (pod_name, namespace)
+            sum(container_memory_usage_bytes{job="kubernetes-kubelet",image!="", container_name!=""}) by (pod_name, namespace)
           * on (namespace, pod_name) group_left(label_name)
-            label_replace(kube_pod_labels{job="kube-state-metrics"}, "pod_name", "$1", "pod", "(.*)")
+            label_replace(kube_pod_labels{job="kubernetes-kube-state"}, "pod_name", "$1", "pod", "(.*)")
           )
         record: namespace_name:container_memory_usage_bytes:sum
       - expr: |
           sum by (namespace, label_name) (
-            sum(kube_pod_container_resource_requests_memory_bytes{job="kube-state-metrics"}) by (namespace, pod)
+            sum(kube_pod_container_resource_requests_memory_bytes{job="kubernetes-kube-state"}) by (namespace, pod)
           * on (namespace, pod) group_left(label_name)
-            label_replace(kube_pod_labels{job="kube-state-metrics"}, "pod_name", "$1", "pod", "(.*)")
+            label_replace(kube_pod_labels{job="kubernetes-kube-state"}, "pod_name", "$1", "pod", "(.*)")
           )
         record: namespace_name:kube_pod_container_resource_requests_memory_bytes:sum
       - expr: |
           sum by (namespace, label_name) (
-            sum(kube_pod_container_resource_requests_cpu_cores{job="kube-state-metrics"} and on(pod) kube_pod_status_scheduled{condition="true"}) by (namespace, pod)
+            sum(kube_pod_container_resource_requests_cpu_cores{job="kubernetes-kube-state"} and on(pod) kube_pod_status_scheduled{condition="true"}) by (namespace, pod)
           * on (namespace, pod) group_left(label_name)
-            label_replace(kube_pod_labels{job="kube-state-metrics"}, "pod_name", "$1", "pod", "(.*)")
+            label_replace(kube_pod_labels{job="kubernetes-kube-state"}, "pod_name", "$1", "pod", "(.*)")
           )
         record: namespace_name:kube_pod_container_resource_requests_cpu_cores:sum
     - name: kube-scheduler.rules
@@ -352,32 +366,32 @@ data:
       - expr: sum(min(kube_pod_info) by (node))
         record: ':kube_pod_info_node_count:'
       - expr: |
-          max(label_replace(kube_pod_info{job="kube-state-metrics"}, "pod", "$1", "pod", "(.*)")) by (node, namespace, pod)
+          max(label_replace(kube_pod_info{job="kubernetes-kube-state"}, "pod", "$1", "pod", "(.*)")) by (node, namespace, pod)
         record: 'node_namespace_pod:kube_pod_info:'
       - expr: |
           count by (node) (sum by (node, cpu) (
-            node_cpu{job="node-exporter"}
+            node_cpu{job="kubernetes-nodes"}
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           ))
         record: node:node_num_cpu:sum
       - expr: |
-          1 - avg(rate(node_cpu{job="node-exporter",mode="idle"}[1m]))
+          1 - avg(rate(node_cpu{job="kubernetes-nodes",mode="idle"}[1m]))
         record: :node_cpu_utilisation:avg1m
       - expr: |
           1 - avg by (node) (
-            rate(node_cpu{job="node-exporter",mode="idle"}[1m])
+            rate(node_cpu{job="kubernetes-nodes",mode="idle"}[1m])
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:)
         record: node:node_cpu_utilisation:avg1m
       - expr: |
-          sum(node_load1{job="node-exporter"})
+          sum(node_load1{job="kubernetes-nodes"})
           /
           sum(node:node_num_cpu:sum)
         record: ':node_cpu_saturation_load1:'
       - expr: |
           sum by (node) (
-            node_load1{job="node-exporter"}
+            node_load1{job="kubernetes-nodes"}
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           )
@@ -386,26 +400,26 @@ data:
         record: 'node:node_cpu_saturation_load1:'
       - expr: |
           1 -
-          sum(node_memory_MemFree{job="node-exporter"} + node_memory_Cached{job="node-exporter"} + node_memory_Buffers{job="node-exporter"})
+          sum(node_memory_MemFree{job="kubernetes-nodes"} + node_memory_Cached{job="kubernetes-nodes"} + node_memory_Buffers{job="kubernetes-nodes"})
           /
-          sum(node_memory_MemTotal{job="node-exporter"})
+          sum(node_memory_MemTotal{job="kubernetes-nodes"})
         record: ':node_memory_utilisation:'
       - expr: |
-          sum(node_memory_MemFree{job="node-exporter"} + node_memory_Cached{job="node-exporter"} + node_memory_Buffers{job="node-exporter"})
+          sum(node_memory_MemFree{job="kubernetes-nodes"} + node_memory_Cached{job="kubernetes-nodes"} + node_memory_Buffers{job="kubernetes-nodes"})
         record: :node_memory_MemFreeCachedBuffers:sum
       - expr: |
-          sum(node_memory_MemTotal{job="node-exporter"})
+          sum(node_memory_MemTotal{job="kubernetes-nodes"})
         record: :node_memory_MemTotal:sum
       - expr: |
           sum by (node) (
-            (node_memory_MemFree{job="node-exporter"} + node_memory_Cached{job="node-exporter"} + node_memory_Buffers{job="node-exporter"})
+            (node_memory_MemFree{job="kubernetes-nodes"} + node_memory_Cached{job="kubernetes-nodes"} + node_memory_Buffers{job="kubernetes-nodes"})
             * on (namespace, pod) group_left(node)
               node_namespace_pod:kube_pod_info:
           )
         record: node:node_memory_bytes_available:sum
       - expr: |
           sum by (node) (
-            node_memory_MemTotal{job="node-exporter"}
+            node_memory_MemTotal{job="kubernetes-nodes"}
             * on (namespace, pod) group_left(node)
               node_namespace_pod:kube_pod_info:
           )
@@ -417,20 +431,20 @@ data:
         record: node:node_memory_utilisation:ratio
       - expr: |
           1e3 * sum(
-            (rate(node_vmstat_pgpgin{job="node-exporter"}[1m])
-           + rate(node_vmstat_pgpgout{job="node-exporter"}[1m]))
+            (rate(node_vmstat_pgpgin{job="kubernetes-nodes"}[1m])
+           + rate(node_vmstat_pgpgout{job="kubernetes-nodes"}[1m]))
           )
         record: :node_memory_swap_io_bytes:sum_rate
       - expr: |
           1 -
           sum by (node) (
-            (node_memory_MemFree{job="node-exporter"} + node_memory_Cached{job="node-exporter"} + node_memory_Buffers{job="node-exporter"})
+            (node_memory_MemFree{job="kubernetes-nodes"} + node_memory_Cached{job="kubernetes-nodes"} + node_memory_Buffers{job="kubernetes-nodes"})
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           )
           /
           sum by (node) (
-            node_memory_MemTotal{job="node-exporter"}
+            node_memory_MemTotal{job="kubernetes-nodes"}
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           )
@@ -440,28 +454,28 @@ data:
         record: 'node:node_memory_utilisation_2:'
       - expr: |
           1e3 * sum by (node) (
-            (rate(node_vmstat_pgpgin{job="node-exporter"}[1m])
-           + rate(node_vmstat_pgpgout{job="node-exporter"}[1m]))
+            (rate(node_vmstat_pgpgin{job="kubernetes-nodes"}[1m])
+           + rate(node_vmstat_pgpgout{job="kubernetes-nodes"}[1m]))
            * on (namespace, pod) group_left(node)
              node_namespace_pod:kube_pod_info:
           )
         record: node:node_memory_swap_io_bytes:sum_rate
       - expr: |
-          avg(irate(node_disk_io_time_ms{job="node-exporter",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3)
+          avg(irate(node_disk_io_time_ms{job="kubernetes-nodes",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3)
         record: :node_disk_utilisation:avg_irate
       - expr: |
           avg by (node) (
-            irate(node_disk_io_time_ms{job="node-exporter",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3
+            irate(node_disk_io_time_ms{job="kubernetes-nodes",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           )
         record: node:node_disk_utilisation:avg_irate
       - expr: |
-          avg(irate(node_disk_io_time_weighted{job="node-exporter",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3)
+          avg(irate(node_disk_io_time_weighted{job="kubernetes-nodes",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3)
         record: :node_disk_saturation:avg_irate
       - expr: |
           avg by (node) (
-            irate(node_disk_io_time_weighted{job="node-exporter",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3
+            irate(node_disk_io_time_weighted{job="kubernetes-nodes",device=~"(sd|xvd|nvme).+"}[1m]) / 1e3
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           )
@@ -475,25 +489,25 @@ data:
           max by (namespace, pod, device) (node_filesystem_avail{fstype=~"ext[234]|btrfs|xfs|zfs"} / node_filesystem_size{fstype=~"ext[234]|btrfs|xfs|zfs"})
         record: 'node:node_filesystem_avail:'
       - expr: |
-          sum(irate(node_network_receive_bytes{job="node-exporter",device="eth0"}[1m])) +
-          sum(irate(node_network_transmit_bytes{job="node-exporter",device="eth0"}[1m]))
+          sum(irate(node_network_receive_bytes{job="kubernetes-nodes",device="eth0"}[1m])) +
+          sum(irate(node_network_transmit_bytes{job="kubernetes-nodes",device="eth0"}[1m]))
         record: :node_net_utilisation:sum_irate
       - expr: |
           sum by (node) (
-            (irate(node_network_receive_bytes{job="node-exporter",device="eth0"}[1m]) +
-            irate(node_network_transmit_bytes{job="node-exporter",device="eth0"}[1m]))
+            (irate(node_network_receive_bytes{job="kubernetes-nodes",device="eth0"}[1m]) +
+            irate(node_network_transmit_bytes{job="kubernetes-nodes",device="eth0"}[1m]))
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           )
         record: node:node_net_utilisation:sum_irate
       - expr: |
-          sum(irate(node_network_receive_drop{job="node-exporter",device="eth0"}[1m])) +
-          sum(irate(node_network_transmit_drop{job="node-exporter",device="eth0"}[1m]))
+          sum(irate(node_network_receive_drop{job="kubernetes-nodes",device="eth0"}[1m])) +
+          sum(irate(node_network_transmit_drop{job="kubernetes-nodes",device="eth0"}[1m]))
         record: :node_net_saturation:sum_irate
       - expr: |
           sum by (node) (
-            (irate(node_network_receive_drop{job="node-exporter",device="eth0"}[1m]) +
-            irate(node_network_transmit_drop{job="node-exporter",device="eth0"}[1m]))
+            (irate(node_network_receive_drop{job="kubernetes-nodes",device="eth0"}[1m]) +
+            irate(node_network_transmit_drop{job="kubernetes-nodes",device="eth0"}[1m]))
           * on (namespace, pod) group_left(node)
             node_namespace_pod:kube_pod_info:
           )
@@ -754,7 +768,7 @@ data:
           message: KubeStateMetrics has disappeared from Prometheus target discovery.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubestatemetricsdown
         expr: |
-          absent(up{job="kube-state-metrics"} == 1)
+          absent(up{job="kubernetes-kube-state"} == 1)
         for: 15m
         labels:
           severity: critical
@@ -763,7 +777,7 @@ data:
           message: Kubelet has disappeared from Prometheus target discovery.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeletdown
         expr: |
-          absent(up{job="kubelet"} == 1)
+          absent(up{job="kubernetes-kubelet"} == 1)
         for: 15m
         labels:
           severity: critical
@@ -772,7 +786,7 @@ data:
           message: NodeExporter has disappeared from Prometheus target discovery.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-nodeexporterdown
         expr: |
-          absent(up{job="node-exporter"} == 1)
+          absent(up{job="kubernetes-nodes"} == 1)
         for: 15m
         labels:
           severity: critical
@@ -802,7 +816,7 @@ data:
             }}) is restarting {{ printf "%.2f" $value }} / second'
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepodcrashlooping
         expr: |
-          rate(kube_pod_container_status_restarts_total{job="kube-state-metrics"}[15m]) > 0
+          rate(kube_pod_container_status_restarts_total{job="kubernetes-kube-state"}[15m]) > 0
         for: 1h
         labels:
           severity: critical
@@ -811,7 +825,7 @@ data:
           message: '{{ $labels.namespace }}/{{ $labels.pod }} is not ready.'
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepodnotready
         expr: |
-          sum by (namespace, pod) (kube_pod_status_phase{job="kube-state-metrics", phase=~"Pending|Unknown"}) > 0
+          sum by (namespace, pod) (kube_pod_status_phase{job="kubernetes-kube-state", phase=~"Pending|Unknown"}) > 0
         for: 1h
         labels:
           severity: critical
@@ -821,9 +835,9 @@ data:
             mismatch
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedeploymentgenerationmismatch
         expr: |
-          kube_deployment_status_observed_generation{job="kube-state-metrics"}
+          kube_deployment_status_observed_generation{job="kubernetes-kube-state"}
             !=
-          kube_deployment_metadata_generation{job="kube-state-metrics"}
+          kube_deployment_metadata_generation{job="kubernetes-kube-state"}
         for: 15m
         labels:
           severity: critical
@@ -833,9 +847,9 @@ data:
             mismatch
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedeploymentreplicasmismatch
         expr: |
-          kube_deployment_spec_replicas{job="kube-state-metrics"}
+          kube_deployment_spec_replicas{job="kubernetes-kube-state"}
             !=
-          kube_deployment_status_replicas_available{job="kube-state-metrics"}
+          kube_deployment_status_replicas_available{job="kubernetes-kube-state"}
         for: 1h
         labels:
           severity: critical
@@ -845,9 +859,9 @@ data:
             mismatch
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubestatefulsetreplicasmismatch
         expr: |
-          kube_statefulset_status_replicas_ready{job="kube-state-metrics"}
+          kube_statefulset_status_replicas_ready{job="kubernetes-kube-state"}
             !=
-          kube_statefulset_status_replicas{job="kube-state-metrics"}
+          kube_statefulset_status_replicas{job="kubernetes-kube-state"}
         for: 15m
         labels:
           severity: critical
@@ -857,9 +871,9 @@ data:
             mismatch
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubestatefulsetgenerationmismatch
         expr: |
-          kube_statefulset_status_observed_generation{job="kube-state-metrics"}
+          kube_statefulset_status_observed_generation{job="kubernetes-kube-state"}
             !=
-          kube_statefulset_metadata_generation{job="kube-state-metrics"}
+          kube_statefulset_metadata_generation{job="kubernetes-kube-state"}
         for: 15m
         labels:
           severity: critical
@@ -869,9 +883,9 @@ data:
             {{$labels.namespace}}/{{$labels.daemonset}}
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedaemonsetrolloutstuck
         expr: |
-          kube_daemonset_status_number_ready{job="kube-state-metrics"}
+          kube_daemonset_status_number_ready{job="kubernetes-kube-state"}
             /
-          kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics"} * 100 < 100
+          kube_daemonset_status_desired_number_scheduled{job="kubernetes-kube-state"} * 100 < 100
         for: 15m
         labels:
           severity: critical
@@ -881,9 +895,9 @@ data:
             are not scheduled.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedaemonsetnotscheduled
         expr: |
-          kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics"}
+          kube_daemonset_status_desired_number_scheduled{job="kubernetes-kube-state"}
             -
-          kube_daemonset_status_current_number_scheduled{job="kube-state-metrics"} > 0
+          kube_daemonset_status_current_number_scheduled{job="kubernetes-kube-state"} > 0
         for: 10m
         labels:
           severity: warning
@@ -893,7 +907,7 @@ data:
             are running where they are not supposed to run.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubedaemonsetmisscheduled
         expr: |
-          kube_daemonset_status_number_misscheduled{job="kube-state-metrics"} > 0
+          kube_daemonset_status_number_misscheduled{job="kubernetes-kube-state"} > 0
         for: 10m
         labels:
           severity: warning
@@ -903,7 +917,7 @@ data:
             more than 1h to complete.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubecronjobrunning
         expr: |
-          time() - kube_cronjob_next_schedule_time{job="kube-state-metrics"} > 3600
+          time() - kube_cronjob_next_schedule_time{job="kubernetes-kube-state"} > 3600
         for: 1h
         labels:
           severity: warning
@@ -913,7 +927,7 @@ data:
             1h to complete.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubejobcompletion
         expr: |
-          kube_job_spec_completions{job="kube-state-metrics"} - kube_job_status_succeeded{job="kube-state-metrics"}  > 0
+          kube_job_spec_completions{job="kubernetes-kube-state"} - kube_job_status_succeeded{job="kubernetes-kube-state"}  > 0
         for: 1h
         labels:
           severity: warning
@@ -922,7 +936,7 @@ data:
           message: Job {{ $labels.namespaces }}/{{ $labels.job }} failed to complete.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubejobfailed
         expr: |
-          kube_job_status_failed{job="kube-state-metrics"}  > 0
+          kube_job_status_failed{job="kubernetes-kube-state"}  > 0
         for: 1h
         labels:
           severity: warning
@@ -963,7 +977,7 @@ data:
           message: Overcommited CPU resource request quota on Namespaces.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubecpuovercommit
         expr: |
-          sum(kube_resourcequota{job="kube-state-metrics", type="hard", resource="requests.cpu"})
+          sum(kube_resourcequota{job="kubernetes-kube-state", type="hard", resource="requests.cpu"})
             /
           sum(node:node_num_cpu:sum)
             > 1.5
@@ -975,9 +989,9 @@ data:
           message: Overcommited Memory resource request quota on Namespaces.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubememovercommit
         expr: |
-          sum(kube_resourcequota{job="kube-state-metrics", type="hard", resource="requests.memory"})
+          sum(kube_resourcequota{job="kubernetes-kube-state", type="hard", resource="requests.memory"})
             /
-          sum(node_memory_MemTotal{job="node-exporter"})
+          sum(node_memory_MemTotal{job="kubernetes-nodes"})
             > 1.5
         for: 5m
         labels:
@@ -988,9 +1002,9 @@ data:
             namespace {{ $labels.namespace }}.'
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubequotaexceeded
         expr: |
-          100 * kube_resourcequota{job="kube-state-metrics", type="used"}
+          100 * kube_resourcequota{job="kubernetes-kube-state", type="used"}
             / ignoring(instance, job, type)
-          kube_resourcequota{job="kube-state-metrics", type="hard"}
+          kube_resourcequota{job="kubernetes-kube-state", type="hard"}
             > 90
         for: 15m
         labels:
@@ -1004,9 +1018,9 @@ data:
             free.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepersistentvolumeusagecritical
         expr: |
-          100 * kubelet_volume_stats_available_bytes{job="kubelet"}
+          100 * kubelet_volume_stats_available_bytes{job="kubernetes-kubelet"}
             /
-          kubelet_volume_stats_capacity_bytes{job="kubelet"}
+          kubelet_volume_stats_capacity_bytes{job="kubernetes-kubelet"}
             < 3
         for: 1m
         labels:
@@ -1018,7 +1032,7 @@ data:
             days. Currently {{ $value }} bytes are available.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubepersistentvolumefullinfourdays
         expr: |
-          kubelet_volume_stats_available_bytes{job="kubelet"} and predict_linear(kubelet_volume_stats_available_bytes{job="kubelet"}[6h], 4 * 24 * 3600) < 0
+          kubelet_volume_stats_available_bytes{job="kubernetes-kubelet"} and predict_linear(kubelet_volume_stats_available_bytes{job="kubernetes-kubelet"}[6h], 4 * 24 * 3600) < 0
         for: 5m
         labels:
           severity: critical
@@ -1029,7 +1043,7 @@ data:
           message: '{{ $labels.node }} has been unready for more than an hour'
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubenodenotready
         expr: |
-          kube_node_status_condition{job="kube-state-metrics",condition="Ready",status="true"} == 0
+          kube_node_status_condition{job="kubernetes-kube-state",condition="Ready",status="true"} == 0
         for: 1h
         labels:
           severity: warning
@@ -1062,7 +1076,7 @@ data:
             }}' is experiencing {{ printf "%0.0f" $value }} errors / sec.'
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubeclienterrors
         expr: |
-          sum(rate(ksm_scrape_error_total{job="kube-state-metrics"}[5m])) by (instance, job) > 0.1
+          sum(rate(ksm_scrape_error_total{job="kubernetes-kube-state"}[5m])) by (instance, job) > 0.1
         for: 15m
         labels:
           severity: warning
@@ -1072,7 +1086,7 @@ data:
             the limit of 110.
           runbook_url: https://github.com/kubernetes-monitoring/kubernetes-mixin/tree/master/runbook.md#alert-name-kubelettoomanypods
         expr: |
-          kubelet_running_pod_count{job="kubelet"} > 110 * 0.9
+          kubelet_running_pod_count{job="kubernetes-kubelet"} > 110 * 0.9
         for: 15m
         labels:
           severity: warning
@@ -1176,14 +1190,14 @@ data:
         for: 10m
         labels:
           severity: warning
-      - alert: DeadMansSwitch
-        annotations:
-          description: This is a DeadMansSwitch meant to ensure that the entire alerting
-            pipeline is functional.
-          summary: Alerting DeadMansSwitch
-        expr: vector(1)
-        labels:
-          severity: none
+     # - alert: DeadMansSwitch
+       # annotations:
+         # description: This is a DeadMansSwitch meant to ensure that the entire alerting
+           # pipeline is functional.
+          #summary: Alerting DeadMansSwitch
+        #expr: vector(1)
+        #labels:
+          #severity: none
     - name: kube-prometheus-node-alerting.rules
       rules:
       - alert: NodeDiskRunningFull
