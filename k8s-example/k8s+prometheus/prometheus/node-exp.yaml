@@ -12,12 +12,21 @@ spec:
         k8s-app: node-exporter
     spec:
       containers:
-      - image: 192.168.19.111/monitor/node-exporter:v0.15.0
+      - image: prom/node-exporter:latest
         name: node-exporter
         ports:
         - containerPort: 9100
+          hostPort: 9100
           protocol: TCP
           name: http
+        volumeMounts:
+          - name: time
+            mountPath: /etc/localtime
+            readOnly: true
+      volumes:
+        - name: time
+          hostPath:
+            path: /etc/localtime
 ---
 apiVersion: v1
 kind: Service
@@ -30,8 +39,7 @@ spec:
   ports:
   - name: http
     port: 9100
-    nodePort: 31672
+    targetPort: 9100
     protocol: TCP
-  type: NodePort
   selector:
     k8s-app: node-exporter

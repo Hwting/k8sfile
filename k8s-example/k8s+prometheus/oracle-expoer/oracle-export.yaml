@@ -1,0 +1,43 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    name: oracle-export-198
+  name: oracle-export-dm
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oracle-export-198
+  template:
+    metadata:
+      labels:
+        app: oracle-export-198
+    spec:
+      containers:
+      - image: 192.168.19.111/monitor/oracledb_exporter:latest
+        name: oracle-export-198
+        command:
+        - "/oracledb_exporter"
+        ports:
+        - containerPort: 9161
+          protocol: TCP
+        env:
+        - name: DATA_SOURCE_NAME
+          value: "system/pass@192.168.1.111:5001/sid" #配置密码信息
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: oracle-export-198
+  name: oracle-export-198
+  namespace: monitoring
+spec:
+  type: NodePort
+  ports:
+  - port: 9161
+    targetPort: 9161
+  selector:
+    app: oracle-export-198
