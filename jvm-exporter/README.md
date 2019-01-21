@@ -3,11 +3,12 @@ javaagent https://github.com/prometheus/jmx_exporter
 
 kubernetes监控jvm
 每个应用都通过javaagent向外提供一个http服务暴露出自己的JMX信息。prometheus通过kubernetes 自动发现就能把这个应用加入监控对象列表，进行数据收集并跟踪服务的状态。
-      annotations:
+``` 
+ annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8090"
         prometheus.io/path: /metrics
-		
+```		
 spec.template.metadata.annotations.prometheus.io/scrape
 是否针对Discorvery
 spec.template.metadata.annotations.prometheus.io/port
