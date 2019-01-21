@@ -16,8 +16,14 @@ spec.template.metadata.annotations.prometheus.io/port
 spec.template.metadata.annotations.prometheus.io/path
 发现目标路径
 
-创建一个configmap 
+创建一个configmap
+``` 
 kubectl create cm prometheus-jmx-exporter-config --from-file=./config.yaml
+kubectl apply -f tomcat-monitoring-demo.yaml
+[root@centos-master jvm-exporter]# kubectl  get pod | grep demo 
+tomcat-monitoring-demo-1780394632-c96hz              1/1       Running            0          1h
+tomcat-monitoring-demo-1780394632-sk09b              1/1       Running            0          1h
+```
 把javaagent放nfs里面如果没有nfs可以考虑添加到基础镜像或者dockerfile时候添加
 grafana 添加仪表盘id:7727
 
