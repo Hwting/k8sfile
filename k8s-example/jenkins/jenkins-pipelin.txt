@@ -1,0 +1,31 @@
+def label = "mypod-${UUID.randomUUID().toString()}"
+podTemplate(label: label, cloud: 'kubernetes',containers: [
+    containerTemplate(
+        name: 'jnlp', 
+        image: '192.168.19.111/gc/jnlp-slave-tools:1.2', 
+        alwaysPullImage: false, 
+        args: '${computer.jnlpmac} ${computer.name}'),],
+        volumes: [hostPathVolume(mountPath: '/var/run/docker.sock',hostPath: '/var/run/docker.sock'),hostPathVolume(mountPath: '/root/.m2',hostPath: '/home/jenkins/.m2')])
+    //containerTemplate(name: 'kubectl', image: 'smesch/kubectl', ttyEnabled: true, command: 'cat',hostPathVolume
+      //  volumes: [secretVolume(secretName: 'kube-config', mountPath: '/root/.kube')])
+    {node(label) { //svn代码拉起daim代码拉起代码
+        stage('SVN checkout') {
+        checkout([$class: 'SubversionSCM', additionalCredentials: [], excludedCommitMessages: '', excludedRegions: '', excludedRevprop: '', excludedUsers: '', filterChangelog: false, ignoreDirPropChanges: false, includedRegions: '', locations: [[cancelProcessOnExternalsFail: true, credentialsId: '7f0ce30d-9d26-4a5d-ba79-9f8a6de55730', depthOption: 'infinity', ignoreExternalsOption: true, local: '.', remote: 'http://192.168.7.3/svn/zhph_salary/tags/20180720'], [cancelProcessOnExternalsFail: true, credentialsId: '7f0ce30d-9d26-4a5d-ba79-9f8a6de55730', depthOption: 'infinity', ignoreExternalsOption: true, local: './dockerfile', remote: 'http://192.168.7.3/svn/zhph_release/trunk/dev-newsalary-test']], quietOperation: true, workspaceUpdater: [$class: 'CheckoutUpdater']])
+        }
+        stage('mvn Build'){//mvn编译war/jar包
+        sh 'id'
+        sh 'mvn install -Ptest -Dmaven.test.skip=true'
+        }
+        stage('docker build push'){//自定义仓库配置编译镜像推送
+	    docker.withRegistry('http://192.168.19.111', 'harbor19111'){
+        def customImage = docker.build('192.168.19.111/tomcat_img/devnewsalary-test:${BUILD_ID}', '-f dockerfile/Dockerfile target/')
+        customImage.push()
+        sh 'docker inspect -f {{.Id}} 192.168.19.111/base_image/spring_boot_pinpoint:latest'
+        stage('查看k8spod信息'){
+         
+         sh 'kubectl get pod --all-namespaces'
+                }
+            }
+        }
+    }
+}

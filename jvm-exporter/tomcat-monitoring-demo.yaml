@@ -1,0 +1,52 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: tomcat-monitoring-demo
+  labels:
+    app: tomcat-monitoring-demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: tomcat-monitoring-demo
+  template:
+    metadata:
+      labels:
+        app: tomcat-monitoring-demo
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9180"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+      - name: tomcat-monitoring-demo
+        image: tomcat:latest
+        env:
+        - name: JAVA_OPTS
+          value: "-server -Xms4096M -Xmx4096M -Xss256K -Djava.awt.headless=true -Dfile.encoding=utf-8 -XX:MaxPermSize=256M -XX:PermSize=128M -javaagent:/jmx-exporter/jmx_prometheus_javaagent-0.3.1.jar=9180:/config/config.yml"
+        ports:
+        - containerPort: 8080
+          name: tomcat
+        - containerPort: 9180
+          name: jmx
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - name: jmx-exporter
+          mountPath:  /jmx-exporter
+          readOnly: false
+        - name: prometheus-jmx-exporter-config
+          mountPath: /config
+      volumes:
+      - name: prometheus-jmx-exporter-config
+        configMap:
+          name: prometheus-jmx-exporter-config
+      - name: jmx-exporter
+        nfs:
+          server: 192.168.7.206
+          path:	/opt/jmx-exporter
