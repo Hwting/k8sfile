@@ -22,6 +22,7 @@ grafana 添加仪表盘id:7727
 
 
 prometheus配置文件添加
+```
     - job_name: 'kubernetes-pods'
       kubernetes_sd_configs:
       - role: pod
@@ -46,6 +47,6 @@ prometheus配置文件添加
       - source_labels: [__meta_kubernetes_pod_name]
         action: replace
         target_label: kubernetes_pod_name
-----------------------------------------------------------------
+```
 使用docker测试
  docker run -d   --name tomcat-jmx   -v ~/jvm-exporter:/jmx-exporter   -e CATALINA_OPTS="-Xms1G -Xmx1G -javaagent:/jmx-exporter/jmx_prometheus_javaagent-0.3.1.jar=6060:/jmx-exporter/config.yml"   -p 6060:6060   -p 9090:8080   tomcat:latest
