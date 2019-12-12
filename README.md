@@ -1,1 +1,1 @@
-# k8sfile
+# kubernetes-template-yaml
