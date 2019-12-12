@@ -1,0 +1,21 @@
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: xx-dm-hpa
+  namespace: prod
+spec:
+  minReplicas: 20         
+  maxReplicas: 20   
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: xx-dm
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      targetAverageUtilization: 80
+  - type: Resource
+    resource:
+      name: memory
+      targetAverageUtilization: 80
